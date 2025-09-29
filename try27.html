@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RangVigyaan - An Immersive AI Kolam Experience</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Jost:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        :root { 
+            --glow-color: #e52e71; 
+            --accent-color: #ff8a00;
+            --secondary-color: #8a2be2;
+        }
+        @keyframes pulse-glow {
+            0%, 100% { opacity: 0.6; filter: blur(15px); }
+            50% { opacity: 1; filter: blur(25px); }
+        }
+        @keyframes text-shine {
+            to { background-position: 200% center; }
+        }
+        @keyframes fade-in-up {
+            0% { opacity: 0; transform: translateY(20px); }
+            100% { opacity: 1; transform: translateY(0); }
+        }
+        body { 
+            font-family: 'Jost', sans-serif; 
+            {% comment %} background-color: #0a0a0a;  {% endcomment %}
+            background-color:rgb(100, 252, 227);
+            color: #e0e0e0; 
+            overflow-x: hidden; 
+            cursor: none; 
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        #three-canvas { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: -1; }
+        .site-container { display: flex; flex-direction: column; min-height: 100vh; }
+        main { flex-grow: 1; display: flex; flex-direction: column; }
+        .content-section { display: none; }
+        .content-section.active { display: block; flex-grow: 1; }
+        #ai-kolam.content-section.active { display: flex; }
+        .glass-card {
+            background: radial-gradient(circle at 100% 0%, rgba(229, 46, 113, 0.1), transparent 40%),
+                        radial-gradient(circle at 0% 100%, rgba(138, 43, 226, 0.1), transparent 40%),
+                        rgba(16, 16, 16, 0.5);
+            backdrop-filter: blur(25px); 
+            -webkit-backdrop-filter: blur(25px);
+            border-radius: 1.5rem;
+            position: relative;
+            overflow: hidden;
+        }
+        .glowing-border {
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            z-index: 1;
+        }
+        .glowing-border::before {
+            content: '';
+            position: absolute;
+            z-index: -1;
+            top: -2px; left: -2px; right: -2px; bottom: -2px;
+            background: linear-gradient(120deg, var(--secondary-color), var(--glow-color), var(--accent-color));
+            border-radius: inherit;
+            animation: pulse-glow 5s ease-in-out infinite;
+            filter: blur(20px);
+            opacity: 0.7;
+        }
+        .card-spotlight {
+            position: absolute;
+            top: var(--y, 0);
+            left: var(--x, 0);
+            transform: translate(-50%, -50%);
+            width: 500px;
+            height: 500px;
+            background: radial-gradient(circle, rgba(229, 46, 113, 0.1) 0%, rgba(229, 46, 113, 0) 70%);
+            opacity: 0;
+            transition: opacity 0.3s ease-in-out;
+            pointer-events: none;
+            z-index: 0;
+        }
+        .interactive-card:hover .card-spotlight { opacity: 1; }
+        .header-title {
+            font-weight: 700; letter-spacing: 0.1em;
+            background: linear-gradient(to right, var(--accent-color), var(--glow-color), var(--secondary-color), var(--accent-color));
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            text-shadow: 0 0 25px rgba(229, 46, 113, 0.6);
+            background-size: 200% auto;
+            animation: text-shine 8s linear infinite;
+        }
+        .btn {
+            background: linear-gradient(45deg, var(--accent-color), var(--glow-color)); color: white; padding: 0.75rem 1.5rem; border-radius: 9999px;
+            font-weight: 500; transition: all 0.3s ease; box-shadow: 0 4px 15px rgba(229, 46, 113, 0.35);
+        }
+        .btn:hover { 
+            transform: translateY(-3px) scale(1.05); 
+            box-shadow: 0 6px 20px rgba(229, 46, 113, 0.5); 
+        }
+        .cursor-dot { 
+            position: fixed; top: 0; left: 0; transform: translate(-50%, -50%); 
+            border-radius: 50%; z-index: 10000; pointer-events: none; 
+            width: 8px; height: 8px; background-color: var(--glow-color);
+            box-shadow: 0 0 10px var(--glow-color), 0 0 20px var(--glow-color);
+        }
+        .sparkle-trail { position: fixed; border-radius: 50%; width: 8px; height: 8px; z-index: 9999; pointer-events: none; }
+        nav { background: rgba(10, 10, 10, 0.5); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-bottom: 1px solid rgba(255, 255, 255, 0.1); flex-shrink: 0; }
+        .nav-link { position: relative; color: #e0e0e0; transition: color 0.3s; }
+        .nav-link:hover { color: var(--glow-color); }
+        .nav-link::after { content: ''; position: absolute; width: 0; height: 2px; bottom: -5px; left: 50%; background-color: var(--glow-color); transition: all 0.3s ease; }
+        .nav-link:hover::after, .nav-link.active::after { width: 100%; left: 0; }
+        .page-title { color: var(--accent-color); text-shadow: 0 0 10px rgba(255, 138, 0, 0.5); }
+        
+        /* Gemini UI Replica */
+        .gemini-main { flex-grow: 1; display: flex; flex-direction: column; position: relative; }
+        .gemini-chat-area { flex-grow: 1; overflow-y: auto; padding: 1rem 2rem; }
+        .gemini-input-area { position: absolute; bottom: 2.5rem; left: 0; right: 0; padding: 0 2rem; }
+        .gemini-input-bar-wrapper { max-width: 840px; margin: 0 auto; }
+        .gemini-input-bar { 
+            background-color: rgba(30, 30, 30, 0.7); backdrop-filter: blur(10px);
+            border-radius: 1.5rem; padding: 0.5rem 0.75rem; display: flex; 
+            align-items: center; gap: 0.75rem; border: 1px solid rgba(255, 255, 255, 0.1); 
+            transition: all 0.3s ease;
+        }
+        .gemini-input-bar:focus-within { 
+            border-color: rgba(229, 46, 113, 0.7);
+            box-shadow: 0 0 20px rgba(229, 46, 113, 0.5);
+        }
+        .gemini-input-bar textarea { flex-grow: 1; background: transparent; border: none; color: white; resize: none; min-height: 44px; padding: 0.5rem; font-size: 1rem; }
+        .gemini-input-bar textarea:focus { outline: none; }
+        .gemini-tool-btn { 
+            background: transparent; border: 1px solid rgba(255,255,255,0.2); 
+            color: #ddd; cursor: pointer; transition: background-color 0.2s; border-radius: 50%; 
+            width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; 
+        }
+        .gemini-tool-btn:hover { background-color: rgba(255,255,255,0.1); }
+        .gemini-tool-btn.hidden { display: none; }
+        .chat-message { display: flex; gap: 1rem; max-width: 1280px; margin: 1rem auto; width: 100%; }
+        .ai-message { animation: fade-in-up 0.6s cubic-bezier(0.25, 1, 0.5, 1) forwards; }
+        .chat-avatar { 
+            width: 40px; height: 40px; border-radius: 50%; 
+            background: linear-gradient(45deg, var(--accent-color), var(--glow-color));
+            display: flex; align-items: center; justify-content: center; flex-shrink: 0; 
+            box-shadow: 0 0 10px rgba(229, 46, 113, 0.5);
+        }
+        .chat-avatar i { stroke: white; }
+        .user-message .chat-avatar { background: #333; box-shadow: none; }
+        .user-message .chat-content { padding-top: 0.5rem; }
+        .svg-container { width: 100%; aspect-ratio: 1 / 1; position: relative; z-index: 1; }
+        .code-block-container { display: flex; flex-direction: column; }
+        /* Vibrant Syntax Highlighting */
+        .code-block { font-family: 'Fira Code', 'Courier New', monospace; white-space: pre-wrap; flex-grow: 1; overflow-y: auto; }
+        .code-block .keyword { color: #ff79c6; } 
+        .code-block .function { color: #50fa7b; }
+        .code-block .class-name { color: #8be9fd; font-style: italic; }
+        .code-block .string { color: #f1fa8c; } 
+        .code-block .number { color: #bd93f9; } 
+        .code-block .comment { color: #6272a4; }
+        .code-block::-webkit-scrollbar { width: 8px; }
+        .code-block::-webkit-scrollbar-track { background: rgba(255,255,255,0.05); border-radius: 4px; }
+        .code-block::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
+        .code-block::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.4); }
+        .typing-cursor { display: inline-block; background-color: #f8f8f2; width: 8px; animation: blink 1s step-end infinite; } 
+        @keyframes blink { 50% { opacity: 0; } }
+        .analysis-item { animation: fade-in-up 0.5s ease-out forwards; opacity: 0; transform: translateY(10px); }
+    </style>
+</head>
+<body class="site-container">
+    <div class="cursor-dot"></div>
+    <canvas id="three-canvas"></canvas>
+
+    <nav class="sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-20">
+                <div class="flex-shrink-0 text-3xl font-bold header-title tracking-normal">RangVigyaan</div>
+                <div class="hidden md:block">
+                    <div class="ml-10 flex items-baseline space-x-8">
+                        <a href="#home" class="nav-link px-3 py-2 rounded-md text-lg font-medium active">Home</a>
+                        <a href="#ai-kolam" class="nav-link px-3 py-2 rounded-md text-lg font-medium">AI Kolam</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="relative">
+        <section id="home" class="content-section active"><div class="max-w-7xl mx-auto py-16 px-4 text-center flex flex-col items-center justify-center min-h-[calc(100vh-168px)]"><h1 class="text-5xl md:text-7xl font-bold header-title">RANGVIGYAAN</h1><p class="text-lg md:text-xl mt-4 text-gray-300 tracking-wider">The AI Art Weaver</p><p class="max-w-3xl mx-auto mt-8 text-gray-400">Welcome to a digital sanctuary where ancient tradition meets artificial intelligence. RangVigyaan is an immersive experience celebrating the beauty of Kolam and Rangoli. Generate unique, mesmerizing patterns, learn about their rich history, and explore a universe of color and geometry.</p><button class="btn mt-12 !text-xl !py-4 !px-8" onclick="navigateTo('ai-kolam')">Begin Weaving</button></div></section>
+        
+        <section id="ai-kolam" class="content-section">
+            <div class="flex-grow flex flex-col">
+                <main class="gemini-main">
+                    <div id="gemini-chat-area" class="gemini-chat-area">
+                        <div id="chat-welcome" class="text-center text-gray-400 p-8 max-w-3xl mx-auto">
+                            <h2 class="text-5xl md:text-6xl font-bold header-title mb-4">AI Kolam Weaver</h2>
+                            <p class="text-lg">Describe a Rangoli, and I will bring it to life. <br> What beautiful pattern are we creating today?</p>
+                        </div>
+                    </div>
+                    <div class="gemini-input-area">
+                        <div class="gemini-input-bar-wrapper">
+                            <div class="gemini-input-bar glass-card">
+                                <button class="gemini-tool-btn" title="Upload Image"><i data-lucide="image"></i></button>
+                                <textarea id="prompt-input" rows="1" placeholder="e.g., a symmetrical flower with eight petals"></textarea>
+                                <button id="send-btn" class="gemini-tool-btn hidden" title="Send"><i data-lucide="arrow-up"></i></button>
+                            </div>
+                        </div>
+                    </div>
+                </main>
+            </div>
+        </section>
+    </main>
+    
+    <script>
+        lucide.createIcons();
+        document.addEventListener('DOMContentLoaded', () => {
+            let isDrawing = false;
+            const VIBRANT_COLORS = ['#ff8a00', '#e52e71', '#8a2be2', '#00bfff', '#32cd32'];
+            
+            const designLibrary = {
+                'default': {
+                    descriptiveText: "An excellent choice. Here is a beautiful, perfectly symmetrical flower design with eight petals, built upon a circular dot grid. Watch as ancient art and modern code weave together to create it.",
+                    drawingCommands: [
+                        ...Array(8).fill(0).map((_, i) => { const angle = (i / 8) * 2 * Math.PI; const x = 250 + 120 * Math.cos(angle); const y = 250 + 120 * Math.sin(angle); return { path: `M ${x - 3} ${y} A 3 3 0 1 1 ${x + 3} ${y} A 3 3 0 1 1 ${x - 3} ${y}`, color: 'white', fill: 'white' }; }),
+                        { path: "M 220 250 A 30 30 0 1 1 280 250 A 30 30 0 1 1 220 250", color: "#8a2be2"},
+                        ...Array(8).fill(0).map((_, i) => { return { path: "M 250 250 Q 180 150, 250 50 Q 320 150, 250 250 Z", color: i % 2 === 0 ? "#ff8a00" : "#e52e71", transform: `rotate(${i * 45}, 250, 250)` }; })
+                    ],
+                    turtleCode: `import turtle\nimport math\n\ndef draw_symmetrical_flower():\n    """Draws a symmetrical 8-petal flower on a dot grid."""\n    screen = turtle.Screen()\n    screen.setup(600, 600)\n    screen.bgcolor("black")\n    \n    t = turtle.Turtle()\n    t.speed(0)\n    t.hideturtle()\n\n    # --- Draw circular dot grid ---\n    t.color("white")\n    dot_radius = 120\n    for i in range(8):\n        t.penup()\n        t.goto(0, 0)\n        t.setheading(i * 45)\n        t.forward(dot_radius)\n        t.dot(6)\n    \n    # --- Draw the flower ---\n    t.penup()\n    t.goto(0, -30)\n    t.pendown()\n    t.width(3)\n    t.color("#8a2be2")\n    t.circle(30) # Central part\n\n    t.penup()\n    t.goto(0,0)\n    t.width(4)\n    \n    # --- Draw Petals ---\n    for i in range(8):\n        t.setheading(90 + i * 45)\n        t.color("#ff8a00" if i % 2 == 0 else "#e52e71")\n        \n        t.pendown()\n        # Draw one petal using two arcs\n        t.circle(150, 40)\n        t.circle(40, 100)\n        t.left(180) # Turn around at the tip\n        t.circle(40, 100)\n        t.circle(150, 40)\n        t.penup()\n        t.goto(0,0)\n\n    screen.done()\n\nif __name__ == "__main__":\n    draw_symmetrical_flower()`,
+                    designPrinciple: "This design is a pristine example of <strong>Rotational Symmetry</strong> and <strong>Radial Balance</strong>. Each petal is identical and can be rotated by 45 degrees onto the next, creating a harmonious and unified whole. The repetition of form creates a pleasing rhythm, drawing the eye towards the center.",
+                    historicContext: "Floral motifs are one of the most universal symbols in art, appearing in nearly every culture's decorative traditions. From ancient Egyptian lotuses to Japanese cherry blossoms and Indian Rangoli, flowers symbolize life, beauty, purity, and the divine. This design carries on that timeless tradition.",
+                    mathAndScience: "The flower is constructed using principles of <strong>Geometry</strong> and <strong>Polar Coordinates</strong>. Each petal's position is defined by an angle and a distance from the center. The perfect symmetry is an application of geometric transformations, specifically rotation around a central point, a fundamental concept in mathematics and physics."
+                },
+            };
+            
+            const promptInput = document.getElementById('prompt-input');
+            const sendBtn = document.getElementById('send-btn');
+            const chatArea = document.getElementById('gemini-chat-area');
+
+            promptInput.addEventListener('input', () => sendBtn.classList.toggle('hidden', promptInput.value.trim().length === 0));
+            sendBtn.addEventListener('click', handlePrompt);
+            promptInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handlePrompt(); } });
+
+            function handlePrompt() {
+                const promptText = promptInput.value.trim();
+                if (isDrawing || promptText === '') return;
+                document.getElementById('chat-welcome')?.remove();
+                isDrawing = true;
+                promptInput.value = '';
+                addMessageToChat(promptText, 'user');
+                const thinkingMessage = addMessageToChat('...', 'ai', true);
+                setTimeout(() => {
+                    const aiResponse = designLibrary['default'];
+                    thinkingMessage.remove();
+                    addMessageWithKolam(aiResponse);
+                    isDrawing = false;
+                    sendBtn.classList.add('hidden');
+                }, 1500);
+            }
+
+            function addMessageToChat(content, role, isThinking = false) {
+                const messageWrapper = document.createElement('div');
+                messageWrapper.className = `chat-message ${role}-message`;
+                const avatarIcon = role === 'user' ? 'user-circle' : 'sparkles';
+                const thinkingAnimation = `<div class="w-2 h-2 bg-white rounded-full animate-pulse"></div><div class="w-2 h-2 bg-white rounded-full animate-pulse [animation-delay:0.2s]"></div><div class="w-2 h-2 bg-white rounded-full animate-pulse [animation-delay:0.4s]"></div>`;
+                const contentHTML = isThinking ? `<div class="flex gap-2 items-center">${thinkingAnimation}</div>` : `<p>${content}</p>`;
+                messageWrapper.innerHTML = `<div class="chat-avatar"><i data-lucide="${avatarIcon}"></i></div><div class="chat-content w-full">${contentHTML}</div>`;
+                chatArea.appendChild(messageWrapper);
+                lucide.createIcons({nodes: [messageWrapper]});
+                chatArea.scrollTop = chatArea.scrollHeight;
+                return messageWrapper;
+            }
+
+            function addMessageWithKolam(response) {
+                const messageWrapper = document.createElement('div');
+                messageWrapper.className = 'chat-message ai-message';
+                const codeId = `code-${Date.now()}`;
+                const copyBtnId = `copy-btn-${Date.now()}`;
+
+                messageWrapper.innerHTML = `
+                    <div class="chat-avatar"><i data-lucide="sparkles"></i></div>
+                    <div class="chat-content w-full">
+                        <p class="mb-4 text-gray-300">${response.descriptiveText}</p>
+                        
+                        <div class="flex flex-col lg:flex-row gap-6 items-start">
+                            
+                            <div class="w-full lg:w-5/12 flex flex-col gap-6">
+                                <div class="svg-container glass-card glowing-border p-2 sm:p-4 interactive-card">
+                                    <div class="card-spotlight"></div>
+                                </div>
+                                <div class="design-analysis glass-card glowing-border p-6 interactive-card">
+                                    <div class="card-spotlight"></div>
+                                    <div class="relative z-10 grid grid-cols-1 gap-y-6">
+                                        <div class="analysis-item" style="animation-delay: 0.1s;"><h4 class="font-bold text-lg mb-2 page-title">Design Principle</h4><p class="text-gray-300 text-sm">${response.designPrinciple}</p></div>
+                                        <div class="analysis-item" style="animation-delay: 0.2s;"><h4 class="font-bold text-lg mb-2 page-title">Math & Science</h4><p class="text-gray-300 text-sm">${response.mathAndScience}</p></div>
+                                        <div class="analysis-item" style="animation-delay: 0.3s;"><h4 class="font-bold text-lg mb-2 page-title">Historic Context</h4><p class="text-gray-300 text-sm">${response.historicContext}</p></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="w-full lg:w-7/12">
+                                <div class="code-block-container glass-card glowing-border h-full interactive-card">
+                                    <div class="card-spotlight"></div>
+                                    <div class="relative z-10 flex flex-col h-full">
+                                        <div class="flex justify-between items-center p-3 border-b border-white/10 flex-shrink-0">
+                                            <span class="text-sm text-gray-400 font-medium">Python (Turtle)</span>
+                                            <button id="${copyBtnId}" class="bg-white/10 hover:bg-white/20 text-white font-bold py-1 px-3 rounded-md text-xs transition-colors">Copy</button>
+                                        </div>
+                                        <div class="code-block p-4 flex-grow">
+                                            <pre><code id="${codeId}"></code></pre>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>`;
+                chatArea.appendChild(messageWrapper);
+                lucide.createIcons({nodes: [messageWrapper]});
+                
+                typeCode(document.getElementById(codeId), response.turtleCode);
+                document.getElementById(copyBtnId).addEventListener('click', e => {
+                    navigator.clipboard.writeText(response.turtleCode);
+                    e.target.textContent = 'Copied!';
+                    setTimeout(() => e.target.textContent = 'Copy', 2000);
+                });
+                animateSVGPaths(messageWrapper.querySelector('.svg-container'), response.drawingCommands);
+                
+                messageWrapper.querySelectorAll('.interactive-card').forEach(card => {
+                    card.addEventListener('mousemove', e => {
+                        const rect = card.getBoundingClientRect();
+                        card.style.setProperty('--x', e.clientX - rect.left + 'px');
+                        card.style.setProperty('--y', e.clientY - rect.top + 'px');
+                    });
+                });
+
+                chatArea.scrollTop = chatArea.scrollHeight;
+            }
+            
+            function syntaxHighlight(code) {
+                return code
+                    .replace(/#.*$/gm, '<span class="comment">$&</span>')
+                    .replace(/\b(def)\s+([a-zA-Z_]\w*)/g, '<span class="keyword">def</span> <span class="function">$2</span>')
+                    .replace(/\b(turtle.Screen|turtle.Turtle)\b/g, '<span class="class-name">$&</span>')
+                    .replace(/\b(import|math|for|in|range|if|else|__name__|__main__|==)\b/g, '<span class="keyword">$&</span>')
+                    .replace(/(["'])(?:(?=(\\?))\2.)*?\1/g, '<span class="string">$&</span>')
+                    .replace(/\b-?\d+\.?\d*\b/g, '<span class="number">$&</span>');
+            }
+            
+            window.addEventListener('mousemove', e => {
+                document.querySelector('.cursor-dot').style.transform = `translate(${e.clientX}px, ${e.clientY}px) translate(-50%, -50%)`;
+                if (Math.random() > 0.5) {
+                    const sparkle = document.createElement('div');
+                    sparkle.className = 'sparkle-trail';
+                    sparkle.style.left = `${e.clientX}px`;
+                    sparkle.style.top = `${e.clientY}px`;
+                    sparkle.style.backgroundColor = VIBRANT_COLORS[Math.floor(Math.random() * VIBRANT_COLORS.length)];
+                    document.body.appendChild(sparkle);
+                    sparkle.animate([{ opacity: 1, transform: 'scale(1)' }, { opacity: 0, transform: `scale(0) translate(${(Math.random()-0.5)*50}px, ${(Math.random()-0.5)*50}px)` }], 1000);
+                    setTimeout(() => sparkle.remove(), 1000);
+                }
+            });
+
+            const scene = new THREE.Scene();
+            const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('three-canvas'), alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            const particleCount = 5000;
+            const positions = new Float32Array(particleCount * 3);
+            const colors = new Float32Array(particleCount * 3);
+            const baseColors = [new THREE.Color('#ff8a00'), new THREE.Color('#e52e71'), new THREE.Color('#8a2be2')];
+            for (let i = 0; i < particleCount; i++) {
+                positions[i * 3] = (Math.random() - 0.5) * 15;
+                positions[i * 3 + 1] = (Math.random() - 0.5) * 15;
+                positions[i * 3 + 2] = (Math.random() - 0.5) * 15;
+                const color = baseColors[i % baseColors.length];
+                colors[i * 3] = color.r; colors[i * 3 + 1] = color.g; colors[i * 3 + 2] = color.b;
+            }
+            const particles = new THREE.BufferGeometry();
+            particles.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            particles.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            const particleMaterial = new THREE.PointsMaterial({ size: 0.02, vertexColors: true, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending });
+            const particleSystem = new THREE.Points(particles, particleMaterial);
+            scene.add(particleSystem);
+            camera.position.z = 5;
+            const clock = new THREE.Clock();
+            const mouse = new THREE.Vector2();
+            window.addEventListener('mousemove', e => {
+                mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+                mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+            });
+            function animateThree() {
+                requestAnimationFrame(animateThree);
+                const elapsedTime = clock.getElapsedTime();
+                particleSystem.rotation.y = elapsedTime * 0.05;
+                camera.position.x += (mouse.x * 0.8 - camera.position.x) * 0.04;
+                camera.position.y += (mouse.y * 0.8 - camera.position.y) * 0.04;
+                camera.lookAt(scene.position);
+                renderer.render(scene, camera);
+            }
+            animateThree();
+
+            window.navigateTo = function(pageId) {
+                document.querySelectorAll('.content-section').forEach(section => section.classList.remove('active'));
+                document.getElementById(pageId).classList.add('active');
+                document.querySelectorAll('.nav-link').forEach(link => {
+                    link.classList.toggle('active', link.getAttribute('href').substring(1) === pageId);
+                });
+            }
+            document.querySelectorAll('.nav-link').forEach(link => link.addEventListener('click', e => { e.preventDefault(); navigateTo(e.target.getAttribute('href').substring(1)); }));
+
+            async function animateSVGPaths(targetSvgContainer, commands) {
+                targetSvgContainer.innerHTML = '';
+                const svgNS = "http://www.w3.org/2000/svg";
+                const svg = document.createElementNS(svgNS, 'svg');
+                svg.setAttribute('viewBox', '0 0 500 500');
+                svg.style.position = 'absolute'; svg.style.width = '100%'; svg.style.height = '100%';
+                targetSvgContainer.appendChild(svg);
+
+                // Step 1: Animate the dot grid structure first
+                const dotCommands = commands.filter(cmd => cmd.fill === 'white');
+                for (const cmd of dotCommands) {
+                    const path = document.createElementNS(svgNS, 'path');
+                    path.setAttribute('d', cmd.path);
+                    path.setAttribute('fill', cmd.fill);
+                    path.setAttribute('stroke', cmd.color);
+                    path.style.transformOrigin = 'center';
+                    path.style.transform = 'scale(0)';
+                    path.style.transition = 'transform 0.2s ease-out';
+                    svg.appendChild(path);
+                    await new Promise(res => setTimeout(res, 25)); // Allow element to be added to DOM
+                    path.style.transform = 'scale(1)';
+                    await new Promise(res => setTimeout(res, 50)); // Pause between each dot
+                }
+
+                // Step 2: Add a deliberate pause after the grid is complete
+                await new Promise(res => setTimeout(res, 800));
+
+                // Step 3: Animate the main design paths
+                const lineCommands = commands.filter(cmd => cmd.fill !== 'white');
+                for (const cmd of lineCommands) {
+                    const path = document.createElementNS(svgNS, 'path');
+                    path.setAttribute('d', cmd.path);
+                    path.setAttribute('fill', 'none');
+                    path.setAttribute('stroke', cmd.color);
+                    path.setAttribute('stroke-width', '4');
+                    path.setAttribute('stroke-linecap', 'round');
+                    if (cmd.transform) path.setAttribute('transform', cmd.transform);
+                    svg.appendChild(path);
+                    
+                    const length = path.getTotalLength();
+                    if (length > 0) {
+                        path.style.strokeDasharray = length;
+                        path.style.strokeDashoffset = length;
+                        await new Promise(resolve => {
+                            path.getBoundingClientRect(); // Trigger reflow
+                            const duration = length / 400;
+                            path.style.transition = `stroke-dashoffset ${duration}s ease-in-out`;
+                            path.style.strokeDashoffset = '0';
+                            setTimeout(resolve, duration * 1000);
+                        });
+                    }
+                }
+            }
+            
+            async function typeCode(element, code) {
+                let typedCode = '';
+                const cursorHTML = '<span class="typing-cursor"></span>';
+                for (let i = 0; i < code.length; i++) {
+                    typedCode += code[i];
+                    if (i % 4 === 0) {
+                        element.innerHTML = syntaxHighlight(typedCode) + cursorHTML;
+                        chatArea.scrollTop = chatArea.scrollHeight;
+                        await new Promise(res => setTimeout(res, 1));
+                    }
+                }
+                element.innerHTML = syntaxHighlight(code);
+                chatArea.scrollTop = chatArea.scrollHeight;
+            }
+
+            navigateTo('home');
+        });
+    </script>
+</body>
+</html>
